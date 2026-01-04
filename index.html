@@ -321,14 +321,21 @@
     createScene();
 
     let headX = 0, headY = 0, headZ = 50;
+    let smoothX = 0, smoothY = 0, smoothZ = 50;
     let baseDistance = 50;
     let faceDetected = false;
     const screenWidthCm = 40, screenHeightCm = 25;
+    const smoothFactor = 0.15;
 
     function updateCameraProjection() {
-        const eyeX = (headX / window.innerWidth - 0.5) * screenWidthCm;
-        const eyeY = -(headY / window.innerHeight - 0.5) * screenHeightCm;
-        const eyeZ = headZ;
+        // Smooth interpolation
+        smoothX += (headX - smoothX) * smoothFactor;
+        smoothY += (headY - smoothY) * smoothFactor;
+        smoothZ += (headZ - smoothZ) * smoothFactor;
+
+        const eyeX = (smoothX / window.innerWidth - 0.5) * screenWidthCm;
+        const eyeY = -(smoothY / window.innerHeight - 0.5) * screenHeightCm;
+        const eyeZ = smoothZ;
 
         const near = 0.1, far = 1000;
         const left = -screenWidthCm / 2 - eyeX;
@@ -362,7 +369,9 @@
             headX = bbox.xCenter * window.innerWidth;
             headY = bbox.yCenter * window.innerHeight;
             const faceWidth = bbox.width * window.innerWidth;
-            headZ = baseDistance * (150 / faceWidth);
+            // Inverted distance calculation - bigger face = closer
+            headZ = baseDistance * (100 / faceWidth);
+            headZ = Math.max(20, Math.min(headZ, 100));
             
             faceDetected = true;
             status.innerHTML = `👁️ Face detected<br>Position: ${headX.toFixed(0)}px, ${headY.toFixed(0)}px<br>Distance: ${headZ.toFixed(0)}cm`;
