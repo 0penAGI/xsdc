@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -84,9 +83,9 @@
         <button id="calibrate">✨ Calibrate</button>
     </div>
 
-
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4/face_detection.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"></script>
+
 <script type="importmap">
 {
     "imports": {
@@ -94,6 +93,7 @@
     }
 }
 </script>
+
 <script type="module">
     import * as THREE from 'three';
 
@@ -336,9 +336,10 @@
         smoothY += (headY - smoothY) * smoothFactor;
         smoothZ += (headZ - smoothZ) * smoothFactor;
 
-        const eyeX = (smoothX / window.innerWidth - 0.5) * screenWidthCm;
+        // ИСПРАВЛЕНО: инвертированы X (лево-право) и Z (приближение-отдаление)
+        const eyeX = -(smoothX / window.innerWidth - 0.5) * screenWidthCm;  // Инвертирован X
         const eyeY = -(smoothY / window.innerHeight - 0.5) * screenHeightCm;
-        const eyeZ = smoothZ;
+        const eyeZ = baseDistance / smoothZ * 50;  // Инвертирован Z
 
         // Clamp eye position to prevent extreme angles
         const clampedX = Math.max(-maxOffset, Math.min(maxOffset, eyeX));
@@ -468,7 +469,6 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
 </script>
-
 
 </body>
 </html>
