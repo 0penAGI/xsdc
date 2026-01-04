@@ -324,8 +324,11 @@
     let smoothX = 0, smoothY = 0, smoothZ = 50;
     let baseDistance = 50;
     let faceDetected = false;
+    let stableFrames = 0;
+    let autoCalibrated = false;
     const screenWidthCm = 40, screenHeightCm = 25;
     const smoothFactor = 0.15;
+    const maxOffset = 15;
 
     function updateCameraProjection() {
         // Smooth interpolation
@@ -337,18 +340,22 @@
         const eyeY = -(smoothY / window.innerHeight - 0.5) * screenHeightCm;
         const eyeZ = smoothZ;
 
+        // Clamp eye position to prevent extreme angles
+        const clampedX = Math.max(-maxOffset, Math.min(maxOffset, eyeX));
+        const clampedY = Math.max(-maxOffset, Math.min(maxOffset, eyeY));
+
         const near = 0.1, far = 1000;
-        const left = -screenWidthCm / 2 - eyeX;
-        const right = screenWidthCm / 2 - eyeX;
-        const bottom = -screenHeightCm / 2 - eyeY;
-        const top = screenHeightCm / 2 - eyeY;
+        const left = -screenWidthCm / 2 - clampedX;
+        const right = screenWidthCm / 2 - clampedX;
+        const bottom = -screenHeightCm / 2 - clampedY;
+        const top = screenHeightCm / 2 - clampedY;
         const scale = near / eyeZ;
 
         camera.projectionMatrix.makePerspective(
             left * scale, right * scale, top * scale, bottom * scale, near, far
         );
 
-        camera.position.set(eyeX * 0.1, eyeY * 0.1, eyeZ * 0.1);
+        camera.position.set(clampedX * 0.1, clampedY * 0.1, eyeZ * 0.1);
         camera.lookAt(0, 0, -8);
     }
 
@@ -369,14 +376,32 @@
             headX = bbox.xCenter * window.innerWidth;
             headY = bbox.yCenter * window.innerHeight;
             const faceWidth = bbox.width * window.innerWidth;
-            // Inverted distance calculation - bigger face = closer
             headZ = baseDistance * (100 / faceWidth);
             headZ = Math.max(20, Math.min(headZ, 100));
             
             faceDetected = true;
-            status.innerHTML = `👁️ Face detected<br>Position: ${headX.toFixed(0)}px, ${headY.toFixed(0)}px<br>Distance: ${headZ.toFixed(0)}cm`;
+            
+            // Auto-calibration after 60 stable frames (~2 seconds)
+            if (!autoCalibrated) {
+                stableFrames++;
+                if (stableFrames > 60) {
+                    baseDistance = headZ;
+                    autoCalibrated = true;
+                    status.innerHTML = `✅ Auto-calibrated!<br>Position: ${headX.toFixed(0)}px, ${headY.toFixed(0)}px<br>Distance: ${headZ.toFixed(0)}cm`;
+                    setTimeout(() => {
+                        if (faceDetected) {
+                            status.innerHTML = `👁️ Face tracked<br>Position: ${headX.toFixed(0)}px, ${headY.toFixed(0)}px<br>Distance: ${headZ.toFixed(0)}cm`;
+                        }
+                    }, 2000);
+                } else {
+                    status.innerHTML = `⏳ Calibrating... ${Math.floor((60 - stableFrames) / 30)}s`;
+                }
+            } else {
+                status.innerHTML = `👁️ Face tracked<br>Position: ${headX.toFixed(0)}px, ${headY.toFixed(0)}px<br>Distance: ${headZ.toFixed(0)}cm`;
+            }
         } else {
             faceDetected = false;
+            stableFrames = 0;
             status.innerHTML = '👀 Looking for face...';
         }
     });
@@ -396,7 +421,9 @@
     calibrateBtn.addEventListener('click', () => {
         if (faceDetected) {
             baseDistance = headZ;
-            status.innerHTML += '<br>✅ Calibrated!';
+            autoCalibrated = true;
+            stableFrames = 0;
+            status.innerHTML = '✅ Manual calibration!<br>' + status.innerHTML.split('<br>').slice(1).join('<br>');
         }
     });
 
