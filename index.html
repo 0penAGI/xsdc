@@ -4,13 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Off-Axis Projection</title>
+    <title>Off-Axis Projection - Glassmorphism</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: #0a0a0a;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             overflow: hidden;
-            font-family: 'Courier New', monospace;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
         #container {
             position: relative;
@@ -24,43 +24,55 @@
         }
         #video {
             position: absolute;
-            top: 10px;
-            right: 10px;
-            width: 160px;
-            height: 120px;
-            border: 2px solid #00ff88;
-            border-radius: 8px;
+            top: 20px;
+            right: 20px;
+            width: 180px;
+            height: 135px;
+            border-radius: 20px;
             transform: scaleX(-1);
             z-index: 10;
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
         }
         #status {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            color: #00ff88;
-            font-size: 14px;
-            background: rgba(0,0,0,0.7);
-            padding: 10px;
-            border-radius: 5px;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 13px;
+            backdrop-filter: blur(16px) saturate(180%);
+            background: rgba(255, 255, 255, 0.15);
+            padding: 16px 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
             z-index: 10;
+            font-weight: 500;
+            line-height: 1.6;
         }
         #calibrate {
             position: absolute;
-            bottom: 20px;
+            bottom: 30px;
             left: 50%;
             transform: translateX(-50%);
-            padding: 12px 24px;
-            background: #00ff88;
-            color: #0a0a0a;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
+            padding: 14px 32px;
+            backdrop-filter: blur(16px) saturate(180%);
+            background: rgba(255, 255, 255, 0.25);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50px;
+            font-size: 15px;
             cursor: pointer;
-            font-weight: bold;
+            font-weight: 600;
             z-index: 10;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
         }
         #calibrate:hover {
-            background: #00cc6a;
+            background: rgba(255, 255, 255, 0.35);
+            transform: translateX(-50%) scale(1.05);
         }
     </style>
 </head>
@@ -69,7 +81,7 @@
         <canvas id="canvas"></canvas>
         <video id="video" autoplay playsinline></video>
         <div id="status">Initializing...</div>
-        <button id="calibrate">Calibrate Distance</button>
+        <button id="calibrate">✨ Calibrate</button>
     </div>
 
 ```
@@ -90,127 +102,249 @@
     const status = document.getElementById('status');
     const calibrateBtn = document.getElementById('calibrate');
 
-    // Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a0a);
-    scene.fog = new THREE.Fog(0x0a0a0a, 10, 50);
-
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
+    renderer.setClearColor(0x000000, 0);
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
-    scene.add(ambientLight);
+    // Shader materials
+    const glassShader = {
+        uniforms: {
+            time: { value: 0 },
+            color1: { value: new THREE.Color(0x667eea) },
+            color2: { value: new THREE.Color(0x764ba2) }
+        },
+        vertexShader: `
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            uniform float time;
+            
+            void main() {
+                vNormal = normalize(normalMatrix * normal);
+                vPosition = position;
+                
+                vec3 pos = position;
+                pos += normal * sin(position.y * 2.0 + time) * 0.1;
+                
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            uniform vec3 color1;
+            uniform vec3 color2;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            
+            void main() {
+                float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0, 0, 1))), 3.0);
+                vec3 color = mix(color1, color2, fresnel);
+                
+                float glow = fresnel * 0.8 + 0.2;
+                color *= glow;
+                
+                float alpha = 0.6 + fresnel * 0.4;
+                gl_FragColor = vec4(color, alpha);
+            }
+        `
+    };
 
-    const pointLight = new THREE.PointLight(0x00ff88, 1, 100);
-    pointLight.position.set(5, 5, 5);
-    pointLight.castShadow = true;
-    scene.add(pointLight);
+    const liquidShader = {
+        uniforms: {
+            time: { value: 0 }
+        },
+        vertexShader: `
+            varying vec3 vPosition;
+            varying vec3 vNormal;
+            uniform float time;
+            
+            void main() {
+                vPosition = position;
+                vNormal = normalize(normalMatrix * normal);
+                
+                vec3 pos = position;
+                float wave = sin(pos.x * 3.0 + time) * cos(pos.z * 3.0 + time) * 0.2;
+                pos.y += wave;
+                
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            varying vec3 vPosition;
+            varying vec3 vNormal;
+            
+            void main() {
+                vec3 color = vec3(0.4, 0.6, 1.0);
+                
+                float pattern = sin(vPosition.x * 10.0 + time) * cos(vPosition.z * 10.0 + time);
+                pattern = pattern * 0.5 + 0.5;
+                
+                color = mix(color, vec3(1.0, 0.4, 0.8), pattern * 0.3);
+                
+                float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0, 0, 1))), 2.0);
+                color += fresnel * vec3(0.8, 1.0, 1.0) * 0.5;
+                
+                gl_FragColor = vec4(color, 0.7);
+            }
+        `
+    };
 
-    // Create 3D objects
+    const energyShader = {
+        uniforms: {
+            time: { value: 0 }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            uniform float time;
+            
+            void main() {
+                vUv = uv;
+                vPosition = position;
+                
+                vec3 pos = position;
+                float expansion = sin(time * 2.0) * 0.1 + 1.0;
+                pos *= expansion;
+                
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            
+            void main() {
+                vec2 uv = vUv;
+                
+                float noise = sin(uv.x * 20.0 + time) * cos(uv.y * 20.0 + time);
+                noise += sin(uv.x * 10.0 - time * 2.0) * cos(uv.y * 15.0 + time);
+                noise = noise * 0.5 + 0.5;
+                
+                vec3 color = vec3(0.0);
+                color.r = sin(noise * 3.14159 + time) * 0.5 + 0.5;
+                color.g = cos(noise * 3.14159 + time * 0.7) * 0.5 + 0.5;
+                color.b = sin(noise * 3.14159 + time * 1.3) * 0.5 + 0.5;
+                
+                color *= 1.5;
+                
+                gl_FragColor = vec4(color, 0.8);
+            }
+        `
+    };
+
+    // Create objects with shaders
     function createScene() {
-        // Central cube
-        const cubeGeom = new THREE.BoxGeometry(2, 2, 2);
-        const cubeMat = new THREE.MeshStandardMaterial({ 
-            color: 0x00ff88,
-            metalness: 0.5,
-            roughness: 0.3
+        // Central glass torus
+        const torusGeom = new THREE.TorusGeometry(2, 0.8, 32, 100);
+        const torusMat = new THREE.ShaderMaterial({
+            ...glassShader,
+            transparent: true,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending
         });
-        const cube = new THREE.Mesh(cubeGeom, cubeMat);
-        cube.position.set(0, 0, -5);
-        cube.castShadow = true;
-        scene.add(cube);
+        const torus = new THREE.Mesh(torusGeom, torusMat);
+        torus.position.set(0, 0, -8);
+        torus.userData.type = 'glass';
+        scene.add(torus);
 
-        // Floating spheres
-        for (let i = 0; i < 5; i++) {
-            const sphereGeom = new THREE.SphereGeometry(0.5, 32, 32);
-            const sphereMat = new THREE.MeshStandardMaterial({ 
-                color: new THREE.Color().setHSL(i / 5, 1, 0.5),
-                metalness: 0.7,
-                roughness: 0.2
+        // Liquid spheres
+        for (let i = 0; i < 6; i++) {
+            const sphereGeom = new THREE.IcosahedronGeometry(0.8, 4);
+            const sphereMat = new THREE.ShaderMaterial({
+                ...liquidShader,
+                transparent: true,
+                side: THREE.DoubleSide,
+                blending: THREE.AdditiveBlending
             });
             const sphere = new THREE.Mesh(sphereGeom, sphereMat);
             
-            const angle = (i / 5) * Math.PI * 2;
+            const angle = (i / 6) * Math.PI * 2;
             sphere.position.set(
-                Math.cos(angle) * 4,
-                Math.sin(i) * 2,
-                Math.sin(angle) * 4 - 5
+                Math.cos(angle) * 5,
+                Math.sin(i * 0.5) * 2,
+                Math.sin(angle) * 5 - 8
             );
-            sphere.castShadow = true;
+            sphere.userData.type = 'liquid';
+            sphere.userData.angle = angle;
+            sphere.userData.index = i;
             scene.add(sphere);
         }
 
-        // Ground plane
-        const planeGeom = new THREE.PlaneGeometry(20, 20);
-        const planeMat = new THREE.MeshStandardMaterial({ 
-            color: 0x1a1a1a,
-            roughness: 0.8
-        });
-        const plane = new THREE.Mesh(planeGeom, planeMat);
-        plane.rotation.x = -Math.PI / 2;
-        plane.position.y = -2;
-        plane.receiveShadow = true;
-        scene.add(plane);
+        // Energy cubes
+        for (let i = 0; i < 4; i++) {
+            const cubeGeom = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+            const cubeMat = new THREE.ShaderMaterial({
+                ...energyShader,
+                transparent: true,
+                side: THREE.DoubleSide,
+                blending: THREE.AdditiveBlending
+            });
+            const cube = new THREE.Mesh(cubeGeom, cubeMat);
+            
+            cube.position.set(
+                (i % 2) * 6 - 3,
+                Math.floor(i / 2) * 4 - 2,
+                -6
+            );
+            cube.userData.type = 'energy';
+            scene.add(cube);
+        }
 
-        // Grid
-        const gridHelper = new THREE.GridHelper(20, 20, 0x00ff88, 0x003322);
-        gridHelper.position.y = -1.99;
-        scene.add(gridHelper);
+        // Background particles
+        const particleCount = 100;
+        const particleGeom = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            positions[i] = (Math.random() - 0.5) * 30;
+            positions[i + 1] = (Math.random() - 0.5) * 30;
+            positions[i + 2] = (Math.random() - 0.5) * 20 - 10;
+        }
+        
+        particleGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        
+        const particleMat = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.1,
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending
+        });
+        
+        const particles = new THREE.Points(particleGeom, particleMat);
+        scene.add(particles);
     }
 
     createScene();
 
-    // Head tracking state
-    let headX = 0;
-    let headY = 0;
-    let headZ = 50; // distance in cm
+    let headX = 0, headY = 0, headZ = 50;
     let baseDistance = 50;
-    let isCalibrating = false;
     let faceDetected = false;
+    const screenWidthCm = 40, screenHeightCm = 25;
 
-    // Screen dimensions (physical estimate)
-    const screenWidthCm = 40;
-    const screenHeightCm = 25;
-
-    // Off-axis projection
     function updateCameraProjection() {
-        const aspect = window.innerWidth / window.innerHeight;
-        const fov = camera.fov * Math.PI / 180;
-        
-        // Calculate view frustum based on head position
         const eyeX = (headX / window.innerWidth - 0.5) * screenWidthCm;
         const eyeY = -(headY / window.innerHeight - 0.5) * screenHeightCm;
         const eyeZ = headZ;
 
-        const near = 0.1;
-        const far = 1000;
-        
-        // Calculate frustum shifts
+        const near = 0.1, far = 1000;
         const left = -screenWidthCm / 2 - eyeX;
         const right = screenWidthCm / 2 - eyeX;
         const bottom = -screenHeightCm / 2 - eyeY;
         const top = screenHeightCm / 2 - eyeY;
-
-        // Apply off-axis projection
         const scale = near / eyeZ;
+
         camera.projectionMatrix.makePerspective(
-            left * scale,
-            right * scale,
-            top * scale,
-            bottom * scale,
-            near,
-            far
+            left * scale, right * scale, top * scale, bottom * scale, near, far
         );
 
-        // Update camera position
         camera.position.set(eyeX * 0.1, eyeY * 0.1, eyeZ * 0.1);
-        camera.lookAt(0, 0, -5);
+        camera.lookAt(0, 0, -8);
     }
 
-    // MediaPipe Face Detection
     const faceDetection = new FaceDetection({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4/${file}`
     });
@@ -225,23 +359,19 @@
             const detection = results.detections[0];
             const bbox = detection.boundingBox;
             
-            // Calculate face center
-            headX = (bbox.xCenter) * window.innerWidth;
-            headY = (bbox.yCenter) * window.innerHeight;
-            
-            // Estimate distance based on face size
+            headX = bbox.xCenter * window.innerWidth;
+            headY = bbox.yCenter * window.innerHeight;
             const faceWidth = bbox.width * window.innerWidth;
             headZ = baseDistance * (150 / faceWidth);
             
             faceDetected = true;
-            status.innerHTML = `Face detected<br>X: ${headX.toFixed(0)}px<br>Y: ${headY.toFixed(0)}px<br>Z: ${headZ.toFixed(0)}cm`;
+            status.innerHTML = `👁️ Face detected<br>Position: ${headX.toFixed(0)}px, ${headY.toFixed(0)}px<br>Distance: ${headZ.toFixed(0)}cm`;
         } else {
             faceDetected = false;
-            status.innerHTML = 'No face detected';
+            status.innerHTML = '👀 Looking for face...';
         }
     });
 
-    // Camera setup
     const cameraUtils = new Camera(video, {
         onFrame: async () => {
             await faceDetection.send({ image: video });
@@ -250,36 +380,44 @@
         height: 480
     });
 
-    cameraUtils.start().then(() => {
-        status.innerHTML = 'Camera ready';
-    }).catch(err => {
-        status.innerHTML = 'Camera error: ' + err.message;
+    cameraUtils.start().catch(err => {
+        status.innerHTML = '⚠️ Camera error: ' + err.message;
     });
 
-    // Calibration
     calibrateBtn.addEventListener('click', () => {
         if (faceDetected) {
             baseDistance = headZ;
-            status.innerHTML += '<br>Calibrated!';
+            status.innerHTML += '<br>✅ Calibrated!';
         }
     });
 
-    // Animation loop
+    let time = 0;
     function animate() {
         requestAnimationFrame(animate);
+        time += 0.016;
         
         if (faceDetected) {
             updateCameraProjection();
         }
         
-        // Rotate objects
         scene.children.forEach(child => {
-            if (child instanceof THREE.Mesh && child.geometry.type === 'BoxGeometry') {
-                child.rotation.x += 0.01;
-                child.rotation.y += 0.01;
-            }
-            if (child instanceof THREE.Mesh && child.geometry.type === 'SphereGeometry') {
-                child.rotation.y += 0.02;
+            if (child instanceof THREE.Mesh) {
+                if (child.userData.type === 'glass') {
+                    child.rotation.x += 0.003;
+                    child.rotation.y += 0.005;
+                    child.material.uniforms.time.value = time;
+                }
+                if (child.userData.type === 'liquid') {
+                    const i = child.userData.index;
+                    child.rotation.y += 0.01;
+                    child.position.y = Math.sin(time + i) * 2;
+                    child.material.uniforms.time.value = time;
+                }
+                if (child.userData.type === 'energy') {
+                    child.rotation.x += 0.01;
+                    child.rotation.y += 0.015;
+                    child.material.uniforms.time.value = time;
+                }
             }
         });
         
@@ -288,7 +426,6 @@
 
     animate();
 
-    // Handle resize
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
