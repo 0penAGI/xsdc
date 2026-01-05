@@ -322,13 +322,15 @@
 
     let headX = 0, headY = 0, headZ = 50;
     let smoothX = 0, smoothY = 0, smoothZ = 50;
-    let baseDistance = 50;
+    let calibratedX = 0, calibratedY = 0, calibratedZ = 50;
     let faceDetected = false;
     let stableFrames = 0;
     let autoCalibrated = false;
-    const screenWidthCm = 40, screenHeightCm = 25;
-    const smoothFactor = 0.15;
-    const maxOffset = 15;
+    const smoothFactor = 0.12;
+
+    // Camera position in 3D space
+    let camPosX = 0, camPosY = 0, camPosZ = 0;
+    let smoothCamX = 0, smoothCamY = 0, smoothCamZ = 0;
 
     function updateCameraProjection() {
         // Smooth interpolation
@@ -336,28 +338,45 @@
         smoothY += (headY - smoothY) * smoothFactor;
         smoothZ += (headZ - smoothZ) * smoothFactor;
 
-        // ИСПРАВЛЕНО: инвертированы X (лево-право) и Z (приближение-отдаление)
-        const eyeX = -(smoothX / window.innerWidth - 0.5) * screenWidthCm;  // Инвертирован X
-        const eyeY = -(smoothY / window.innerHeight - 0.5) * screenHeightCm;
-        const eyeZ = baseDistance / smoothZ * 50;  // Инвертирован Z
+        // Calculate delta from calibrated position
+        const deltaX = smoothX - calibratedX;
+        const deltaY = smoothY - calibratedY;
+        const deltaZ = smoothZ - calibratedZ;
 
-        // Clamp eye position to prevent extreme angles
-        const clampedX = Math.max(-maxOffset, Math.min(maxOffset, eyeX));
-        const clampedY = Math.max(-maxOffset, Math.min(maxOffset, eyeY));
+        // Convert to camera movement
+        // X: влево-вправо (инвертировано)
+        camPosX = -(deltaX / window.innerWidth) * 20;
+        // Y: вверх-вниз
+        camPosY = (deltaY / window.innerHeight) * 15;
+        // Z: вперёд-назад (ближе = вперёд, дальше = назад)
+        camPosZ = (deltaZ / calibratedZ) * 15;
 
+        // Smooth camera movement
+        smoothCamX += (camPosX - smoothCamX) * smoothFactor;
+        smoothCamY += (camPosY - smoothCamY) * smoothFactor;
+        smoothCamZ += (camPosZ - smoothCamZ) * smoothFactor;
+
+        // Apply to camera
+        camera.position.set(smoothCamX, smoothCamY, smoothCamZ);
+        camera.lookAt(0, 0, -8);
+
+        // Off-axis projection for parallax
+        const eyeX = smoothCamX * 0.5;
+        const eyeY = smoothCamY * 0.5;
+        
+        const screenWidthCm = 40, screenHeightCm = 25;
         const near = 0.1, far = 1000;
-        const left = -screenWidthCm / 2 - clampedX;
-        const right = screenWidthCm / 2 - clampedX;
-        const bottom = -screenHeightCm / 2 - clampedY;
-        const top = screenHeightCm / 2 - clampedY;
-        const scale = near / eyeZ;
+        const eyeDist = 5;
+        
+        const left = -screenWidthCm / 2 - eyeX;
+        const right = screenWidthCm / 2 - eyeX;
+        const bottom = -screenHeightCm / 2 - eyeY;
+        const top = screenHeightCm / 2 - eyeY;
+        const scale = near / eyeDist;
 
         camera.projectionMatrix.makePerspective(
             left * scale, right * scale, top * scale, bottom * scale, near, far
         );
-
-        camera.position.set(clampedX * 0.1, clampedY * 0.1, eyeZ * 0.1);
-        camera.lookAt(0, 0, -8);
     }
 
     const faceDetection = new FaceDetection({
@@ -377,7 +396,7 @@
             headX = bbox.xCenter * window.innerWidth;
             headY = bbox.yCenter * window.innerHeight;
             const faceWidth = bbox.width * window.innerWidth;
-            headZ = baseDistance * (100 / faceWidth);
+            headZ = 50 * (100 / faceWidth);
             headZ = Math.max(20, Math.min(headZ, 100));
             
             faceDetected = true;
@@ -386,19 +405,27 @@
             if (!autoCalibrated) {
                 stableFrames++;
                 if (stableFrames > 60) {
-                    baseDistance = headZ;
+                    calibratedX = headX;
+                    calibratedY = headY;
+                    calibratedZ = headZ;
                     autoCalibrated = true;
-                    status.innerHTML = `✅ Auto-calibrated!<br>Position: ${headX.toFixed(0)}px, ${headY.toFixed(0)}px<br>Distance: ${headZ.toFixed(0)}cm`;
+                    status.innerHTML = `✅ Auto-calibrated!<br>Ready to explore`;
                     setTimeout(() => {
                         if (faceDetected) {
-                            status.innerHTML = `👁️ Face tracked<br>Position: ${headX.toFixed(0)}px, ${headY.toFixed(0)}px<br>Distance: ${headZ.toFixed(0)}cm`;
+                            const dx = ((headX - calibratedX) / window.innerWidth * 100).toFixed(1);
+                            const dy = ((headY - calibratedY) / window.innerHeight * 100).toFixed(1);
+                            const dz = ((headZ - calibratedZ) / calibratedZ * 100).toFixed(1);
+                            status.innerHTML = `👁️ Movement<br>X:${dx}% Y:${dy}%<br>Z:${dz}%`;
                         }
                     }, 2000);
                 } else {
                     status.innerHTML = `⏳ Calibrating... ${Math.floor((60 - stableFrames) / 30)}s`;
                 }
             } else {
-                status.innerHTML = `👁️ Face tracked<br>Position: ${headX.toFixed(0)}px, ${headY.toFixed(0)}px<br>Distance: ${headZ.toFixed(0)}cm`;
+                const dx = ((headX - calibratedX) / window.innerWidth * 100).toFixed(1);
+                const dy = ((headY - calibratedY) / window.innerHeight * 100).toFixed(1);
+                const dz = ((headZ - calibratedZ) / calibratedZ * 100).toFixed(1);
+                status.innerHTML = `👁️ Movement<br>X:${dx}% Y:${dy}%<br>Z:${dz}%`;
             }
         } else {
             faceDetected = false;
@@ -421,10 +448,15 @@
 
     calibrateBtn.addEventListener('click', () => {
         if (faceDetected) {
-            baseDistance = headZ;
+            calibratedX = headX;
+            calibratedY = headY;
+            calibratedZ = headZ;
             autoCalibrated = true;
             stableFrames = 0;
-            status.innerHTML = '✅ Manual calibration!<br>' + status.innerHTML.split('<br>').slice(1).join('<br>');
+            smoothCamX = 0;
+            smoothCamY = 0;
+            smoothCamZ = 0;
+            status.innerHTML = '✅ Manual calibration!<br>Center position set';
         }
     });
 
@@ -433,7 +465,7 @@
         requestAnimationFrame(animate);
         time += 0.016;
         
-        if (faceDetected) {
+        if (faceDetected && autoCalibrated) {
             updateCameraProjection();
         }
         
