@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Off-Axis Projection - Glassmorphism</title>
+    <title>Reactive Glassmorphism Portal</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -34,6 +34,7 @@
             background: rgba(255, 255, 255, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.2);
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: opacity 0.3s;
         }
         #status {
             position: absolute;
@@ -108,10 +109,11 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x000000, 0);
 
-    // Shader materials
+    // Enhanced shaders with proximity reactions
     const glassShader = {
         uniforms: {
             time: { value: 0 },
+            proximity: { value: 0 },
             color1: { value: new THREE.Color(0x667eea) },
             color2: { value: new THREE.Color(0x764ba2) }
         },
@@ -119,19 +121,23 @@
             varying vec3 vNormal;
             varying vec3 vPosition;
             uniform float time;
+            uniform float proximity;
             
             void main() {
                 vNormal = normalize(normalMatrix * normal);
                 vPosition = position;
                 
                 vec3 pos = position;
-                pos += normal * sin(position.y * 2.0 + time) * 0.1;
+                float wave = sin(position.y * 2.0 + time) * 0.1;
+                wave += sin(position.x * 3.0 + time * 0.7) * 0.05;
+                pos += normal * wave * (1.0 + proximity * 0.5);
                 
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
             }
         `,
         fragmentShader: `
             uniform float time;
+            uniform float proximity;
             uniform vec3 color1;
             uniform vec3 color2;
             varying vec3 vNormal;
@@ -141,10 +147,14 @@
                 float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0, 0, 1))), 3.0);
                 vec3 color = mix(color1, color2, fresnel);
                 
-                float glow = fresnel * 0.8 + 0.2;
+                // Pulse with proximity
+                float pulse = sin(time * 2.0) * 0.5 + 0.5;
+                color += vec3(0.3, 0.5, 0.8) * proximity * pulse;
+                
+                float glow = fresnel * 0.8 + 0.2 + proximity * 0.3;
                 color *= glow;
                 
-                float alpha = 0.6 + fresnel * 0.4;
+                float alpha = 0.6 + fresnel * 0.4 + proximity * 0.2;
                 gl_FragColor = vec4(color, alpha);
             }
         `
@@ -152,12 +162,14 @@
 
     const liquidShader = {
         uniforms: {
-            time: { value: 0 }
+            time: { value: 0 },
+            proximity: { value: 0 }
         },
         vertexShader: `
             varying vec3 vPosition;
             varying vec3 vNormal;
             uniform float time;
+            uniform float proximity;
             
             void main() {
                 vPosition = position;
@@ -165,13 +177,18 @@
                 
                 vec3 pos = position;
                 float wave = sin(pos.x * 3.0 + time) * cos(pos.z * 3.0 + time) * 0.2;
+                wave *= (1.0 + proximity * 0.8);
                 pos.y += wave;
+                
+                // Expand when close
+                pos *= (1.0 + proximity * 0.15);
                 
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
             }
         `,
         fragmentShader: `
             uniform float time;
+            uniform float proximity;
             varying vec3 vPosition;
             varying vec3 vNormal;
             
@@ -183,29 +200,35 @@
                 
                 color = mix(color, vec3(1.0, 0.4, 0.8), pattern * 0.3);
                 
+                // React to proximity
+                color += vec3(0.5, 0.8, 1.0) * proximity * 0.4;
+                
                 float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0, 0, 1))), 2.0);
                 color += fresnel * vec3(0.8, 1.0, 1.0) * 0.5;
                 
-                gl_FragColor = vec4(color, 0.7);
+                gl_FragColor = vec4(color, 0.7 + proximity * 0.2);
             }
         `
     };
 
     const energyShader = {
         uniforms: {
-            time: { value: 0 }
+            time: { value: 0 },
+            proximity: { value: 0 }
         },
         vertexShader: `
             varying vec2 vUv;
             varying vec3 vPosition;
             uniform float time;
+            uniform float proximity;
             
             void main() {
                 vUv = uv;
                 vPosition = position;
                 
                 vec3 pos = position;
-                float expansion = sin(time * 2.0) * 0.1 + 1.0;
+                float expansion = sin(time * 2.0 + proximity * 3.0) * 0.1 + 1.0;
+                expansion += proximity * 0.3;
                 pos *= expansion;
                 
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
@@ -213,14 +236,16 @@
         `,
         fragmentShader: `
             uniform float time;
+            uniform float proximity;
             varying vec2 vUv;
             varying vec3 vPosition;
             
             void main() {
                 vec2 uv = vUv;
                 
-                float noise = sin(uv.x * 20.0 + time) * cos(uv.y * 20.0 + time);
-                noise += sin(uv.x * 10.0 - time * 2.0) * cos(uv.y * 15.0 + time);
+                float speed = 1.0 + proximity * 2.0;
+                float noise = sin(uv.x * 20.0 + time * speed) * cos(uv.y * 20.0 + time * speed);
+                noise += sin(uv.x * 10.0 - time * 2.0 * speed) * cos(uv.y * 15.0 + time * speed);
                 noise = noise * 0.5 + 0.5;
                 
                 vec3 color = vec3(0.0);
@@ -228,14 +253,15 @@
                 color.g = cos(noise * 3.14159 + time * 0.7) * 0.5 + 0.5;
                 color.b = sin(noise * 3.14159 + time * 1.3) * 0.5 + 0.5;
                 
-                color *= 1.5;
+                color *= (1.5 + proximity * 0.8);
                 
-                gl_FragColor = vec4(color, 0.8);
+                gl_FragColor = vec4(color, 0.8 + proximity * 0.15);
             }
         `
     };
 
-    // Create objects with shaders
+    const objects = [];
+
     function createScene() {
         // Central glass torus
         const torusGeom = new THREE.TorusGeometry(2, 0.8, 32, 100);
@@ -248,6 +274,8 @@
         const torus = new THREE.Mesh(torusGeom, torusMat);
         torus.position.set(0, 0, -8);
         torus.userData.type = 'glass';
+        torus.userData.basePos = torus.position.clone();
+        objects.push(torus);
         scene.add(torus);
 
         // Liquid spheres
@@ -270,6 +298,8 @@
             sphere.userData.type = 'liquid';
             sphere.userData.angle = angle;
             sphere.userData.index = i;
+            sphere.userData.basePos = sphere.position.clone();
+            objects.push(sphere);
             scene.add(sphere);
         }
 
@@ -290,25 +320,27 @@
                 -6
             );
             cube.userData.type = 'energy';
+            cube.userData.basePos = cube.position.clone();
+            objects.push(cube);
             scene.add(cube);
         }
 
         // Background particles
-        const particleCount = 100;
+        const particleCount = 150;
         const particleGeom = new THREE.BufferGeometry();
         const positions = new Float32Array(particleCount * 3);
         
         for (let i = 0; i < particleCount * 3; i += 3) {
-            positions[i] = (Math.random() - 0.5) * 30;
-            positions[i + 1] = (Math.random() - 0.5) * 30;
-            positions[i + 2] = (Math.random() - 0.5) * 20 - 10;
+            positions[i] = (Math.random() - 0.5) * 40;
+            positions[i + 1] = (Math.random() - 0.5) * 40;
+            positions[i + 2] = (Math.random() - 0.5) * 30 - 10;
         }
         
         particleGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         
         const particleMat = new THREE.PointsMaterial({
             color: 0xffffff,
-            size: 0.1,
+            size: 0.15,
             transparent: true,
             opacity: 0.6,
             blending: THREE.AdditiveBlending
@@ -328,39 +360,47 @@
     let autoCalibrated = false;
     const smoothFactor = 0.12;
 
-    // Camera position in 3D space
     let camPosX = 0, camPosY = 0, camPosZ = 0;
     let smoothCamX = 0, smoothCamY = 0, smoothCamZ = 0;
+    let proximityValue = 0;
 
     function updateCameraProjection() {
-        // Smooth interpolation
         smoothX += (headX - smoothX) * smoothFactor;
         smoothY += (headY - smoothY) * smoothFactor;
         smoothZ += (headZ - smoothZ) * smoothFactor;
 
-        // Calculate delta from calibrated position
         const deltaX = smoothX - calibratedX;
         const deltaY = smoothY - calibratedY;
         const deltaZ = smoothZ - calibratedZ;
 
-        // Convert to camera movement
-        // X: влево-вправо (инвертировано)
         camPosX = -(deltaX / window.innerWidth) * 20;
-        // Y: вверх-вниз
         camPosY = (deltaY / window.innerHeight) * 15;
-        // Z: вперёд-назад (ближе = вперёд, дальше = назад)
         camPosZ = (deltaZ / calibratedZ) * 15;
 
-        // Smooth camera movement
+        // Calculate proximity (0 to 1, closer = higher)
+        const normalizedZ = Math.max(0, Math.min(1, (calibratedZ - smoothZ) / calibratedZ + 0.5));
+        proximityValue += (normalizedZ - proximityValue) * 0.1;
+
         smoothCamX += (camPosX - smoothCamX) * smoothFactor;
         smoothCamY += (camPosY - smoothCamY) * smoothFactor;
         smoothCamZ += (camPosZ - smoothCamZ) * smoothFactor;
 
-        // Apply to camera
         camera.position.set(smoothCamX, smoothCamY, smoothCamZ);
         camera.lookAt(0, 0, -8);
 
-        // Off-axis projection for parallax
+        // Update all object shaders with proximity
+        objects.forEach(obj => {
+            if (obj.material.uniforms.proximity) {
+                obj.material.uniforms.proximity.value = proximityValue;
+            }
+            
+            // Objects react to camera approach
+            if (obj.userData.type === 'liquid') {
+                const pushBack = proximityValue * 2;
+                obj.position.z = obj.userData.basePos.z - pushBack;
+            }
+        });
+
         const eyeX = smoothCamX * 0.5;
         const eyeY = smoothCamY * 0.5;
         
@@ -401,7 +441,6 @@
             
             faceDetected = true;
             
-            // Auto-calibration after 60 stable frames (~2 seconds)
             if (!autoCalibrated) {
                 stableFrames++;
                 if (stableFrames > 60) {
@@ -409,28 +448,22 @@
                     calibratedY = headY;
                     calibratedZ = headZ;
                     autoCalibrated = true;
-                    status.innerHTML = `✅ Auto-calibrated!<br>Ready to explore`;
+                    status.innerHTML = `✅ Portal open<br>Distance: ${headZ.toFixed(0)}cm`;
                     setTimeout(() => {
                         if (faceDetected) {
-                            const dx = ((headX - calibratedX) / window.innerWidth * 100).toFixed(1);
-                            const dy = ((headY - calibratedY) / window.innerHeight * 100).toFixed(1);
-                            const dz = ((headZ - calibratedZ) / calibratedZ * 100).toFixed(1);
-                            status.innerHTML = `👁️ Movement<br>X:${dx}% Y:${dy}%<br>Z:${dz}%`;
+                            status.innerHTML = `🌀 Resonating<br>Proximity: ${(proximityValue * 100).toFixed(0)}%`;
                         }
                     }, 2000);
                 } else {
-                    status.innerHTML = `⏳ Calibrating... ${Math.floor((60 - stableFrames) / 30)}s`;
+                    status.innerHTML = `⏳ Attuning... ${Math.floor((60 - stableFrames) / 30)}s`;
                 }
             } else {
-                const dx = ((headX - calibratedX) / window.innerWidth * 100).toFixed(1);
-                const dy = ((headY - calibratedY) / window.innerHeight * 100).toFixed(1);
-                const dz = ((headZ - calibratedZ) / calibratedZ * 100).toFixed(1);
-                status.innerHTML = `👁️ Movement<br>X:${dx}% Y:${dy}%<br>Z:${dz}%`;
+                status.innerHTML = `🌀 Resonating<br>Proximity: ${(proximityValue * 100).toFixed(0)}%`;
             }
         } else {
             faceDetected = false;
             stableFrames = 0;
-            status.innerHTML = '👀 Looking for face...';
+            status.innerHTML = '👁️ Seeking presence...';
         }
     });
 
@@ -443,7 +476,7 @@
     });
 
     cameraUtils.start().catch(err => {
-        status.innerHTML = '⚠️ Camera error: ' + err.message;
+        status.innerHTML = '⚠️ Portal blocked: ' + err.message;
     });
 
     calibrateBtn.addEventListener('click', () => {
@@ -456,7 +489,7 @@
             smoothCamX = 0;
             smoothCamY = 0;
             smoothCamZ = 0;
-            status.innerHTML = '✅ Manual calibration!<br>Center position set';
+            status.innerHTML = '✅ Recalibrated<br>Portal realigned';
         }
     });
 
@@ -478,13 +511,13 @@
                 }
                 if (child.userData.type === 'liquid') {
                     const i = child.userData.index;
-                    child.rotation.y += 0.01;
-                    child.position.y = Math.sin(time + i) * 2;
+                    child.rotation.y += 0.01 * (1 + proximityValue * 0.5);
+                    child.position.y = child.userData.basePos.y + Math.sin(time + i) * 2;
                     child.material.uniforms.time.value = time;
                 }
                 if (child.userData.type === 'energy') {
-                    child.rotation.x += 0.01;
-                    child.rotation.y += 0.015;
+                    child.rotation.x += 0.01 * (1 + proximityValue);
+                    child.rotation.y += 0.015 * (1 + proximityValue);
                     child.material.uniforms.time.value = time;
                 }
             }
